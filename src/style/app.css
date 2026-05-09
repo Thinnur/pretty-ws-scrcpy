@@ -1,62 +1,45 @@
-:root {
-    --main-bg-color: hsl(0, 0%, 100%);
-    --stream-bg-color: hsl(0, 0%, 85%);
-    --shell-bg-color: hsl(0, 0%, 0%);
-    --text-shadow-color: hsl(218, 67%, 95%);
-    --header-bg-color: hsl(0, 0%, 95%);
-    --controls-bg-color: hsla(0, 0%, 95%, 0.8);
-    --control-buttons-bg-color: hsl(0, 0%, 95%);
-    --text-color: hsl(210, 16%, 22%);
-    --text-color-light: hsl(200, 16%, 52%);
-    --link-color: hsl(218, 85%, 43%);
-    --link-color-light: hsl(218, 85%, 73%);
-    --link-color_visited: hsl(271, 68%, 32%);
-    --link-color_visited-light: hsl(271, 68%, 72%);
-    --svg-checkbox-bg-color: hsl(172, 100%, 37%);
-    --svg-button-fill: hsl(199, 17%, 46%);
-    --kill-button-hover-color: hsl(342, 100%, 37%);
-    --url-color: hsl(0, 0%, 60%);
-    --button-text-color: hsl(214, 82%, 51%);
-    --button-border-color: hsl(0, 0%, 70%);
-    --progress-background-color: hsla(225, 100%, 50%, 0.2);
-    --progress-background-error-color: hsla(0, 100%, 50%, 0.2);
-    --font-size: 14px;
-}
+@import './design-tokens.css';
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --main-bg-color: hsl(0, 0%, 14%);
-        --stream-bg-color: hsl(0, 0%, 20%);
-        --shell-bg-color: hsl(0, 0%, 0%);
-        --text-shadow-color: hsl(218, 17%, 18%);
-        --header-bg-color: hsl(0, 0%, 20%);
-        --controls-bg-color: hsla(201, 18%, 19%, 0.8);
-        --control-buttons-bg-color: hsl(201, 18%, 19%);
-        --text-color: hsl(0, 0%, 90%);
-        --text-color-light: hsl(0, 0%, 60%);
-        --link-color: hsl(218, 63%, 70%);
-        --link-color-light: hsl(218, 63%, 50%);
-        --link-color_visited: hsl(267, 31%, 47%);
-        --link-color_visited-light: hsl(267, 31%, 27%);
-        --svg-checkbox-bg-color: hsl(172, 100%, 27%);
-        --svg-button-fill: hsl(0, 0%, 100%);
-        --kill-button-hover-color: hsl(342, 100%, 27%);
-        --url-color: hsl(0, 0%, 60%);
-        --device-list-stripe-color: hsl(0, 0%, 16%);
-        --device-list-default-color: hsl(0, 0%, 14%);
-        --button-text-color: hsl(214, 82%, 76%);
-        --button-border-color: hsl(213, 5%, 39%);
-        --progress-background-color: hsla(225, 100%, 50%, 0.2);
-        --progress-background-error-color: hsla(0, 100%, 50%, 0.2);
-    }
+/* Map legacy vars to design tokens */
+:root {
+    --main-bg-color: var(--bg-base);
+    --stream-bg-color: var(--bg-surface-2);
+    --shell-bg-color: #000000;
+    --text-shadow-color: var(--bg-surface-2);
+    --header-bg-color: var(--bg-surface-1);
+    --controls-bg-color: rgba(17, 17, 17, 0.85);
+    --control-buttons-bg-color: var(--bg-surface-1);
+    --text-color: var(--text-primary);
+    --text-color-light: var(--text-secondary);
+    --link-color: var(--accent);
+    --link-color-light: var(--accent-hover);
+    --link-color_visited: #a374e8;
+    --link-color_visited-light: #7a4fbf;
+    --svg-checkbox-bg-color: var(--success);
+    --svg-button-fill: var(--text-primary);
+    --kill-button-hover-color: var(--danger);
+    --url-color: var(--text-secondary);
+    --button-text-color: var(--accent);
+    --button-border-color: var(--border);
+    --progress-background-color: var(--accent-muted);
+    --progress-background-error-color: var(--danger-muted);
+    --device-list-stripe-color: var(--bg-surface-1);
+    --device-list-default-color: var(--bg-base);
 }
 
 html {
     font-size: var(--font-size);
+    color-scheme: dark;
 }
 
 a {
     color: var(--link-color);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+
+a:hover {
+    color: var(--accent-hover);
 }
 
 a:visited {
@@ -64,6 +47,7 @@ a:visited {
 }
 
 body {
+    font-family: var(--font-sans);
     color: var(--text-color);
     background-color: var(--main-bg-color);
     position: absolute;
@@ -71,8 +55,9 @@ body {
     height: 100%;
     width: 100%;
     overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
-
 
 body.shell {
     background-color: var(--shell-bg-color);
@@ -90,6 +75,11 @@ body.stream {
 
 :focus {
     outline: none;
+}
+
+:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .flex-center {
@@ -124,11 +114,11 @@ body.stream {
     background-color: #000000;
 }
 
-
 .control-buttons-list {
     float: right;
     width: 3.715rem;
     background-color: var(--control-buttons-bg-color);
+    border-left: 1px solid var(--border);
 }
 
 .control-button {
@@ -137,8 +127,11 @@ body.stream {
     width: 2.143rem;
     height: 2.143rem;
     border: none;
-    opacity: 0.75;
+    opacity: 0.6;
     background-color: var(--control-buttons-bg-color);
+    cursor: pointer;
+    transition: opacity var(--transition);
+    border-radius: var(--radius-sm);
 }
 
 .control-button:hover {
