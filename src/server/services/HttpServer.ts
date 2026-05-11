@@ -76,6 +76,9 @@ export class HttpServer extends TypedEmitter<HttpServerEvents> implements Servic
 
     public async start(): Promise<void> {
         this.mainApp = express();
+        this.mainApp.use(express.json());
+        const { registerDeviceApi } = await import('../mw/DeviceApiHandler');
+        registerDeviceApi(this.mainApp);
         if (HttpServer.SERVE_STATIC && HttpServer.PUBLIC_DIR) {
             this.mainApp.use(PATHNAME, express.static(HttpServer.PUBLIC_DIR));
 

@@ -8,9 +8,7 @@
 }
 
 body.list {
-    height: auto;
-    width: auto;
-    overflow: auto;
+    /* Suppressed: dashboard.css controls layout */
 }
 
 #devices {
@@ -35,13 +33,13 @@ body.list {
     border-radius: 3px;
 }
 
+/* Suppress old device list — new UI uses REST-polled chips */
+#devices {
+    display: none !important;
+}
+
 body.stream #devices {
-    background-color: rgba(10, 10, 10, 0.92);
-    backdrop-filter: blur(12px);
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 3;
+    display: none !important;
 }
 
 body.list #device_list_menu {
@@ -56,15 +54,62 @@ body.list #device_list_menu {
     z-index: 4;
 }
 
+/* Page header */
+.devices-header {
+    padding: 24px 4px 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+}
+
+.devices-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    letter-spacing: -0.02em;
+    margin: 0;
+}
+
 /* Tracker group header */
 #devices .tracker-name {
-    padding: 20px 4px 8px;
+    padding: 4px 4px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-secondary);
     font-family: var(--font-mono);
+}
+
+#devices .tracker-name-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#devices .tracker-badge {
+    font-size: 9px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+#devices .tracker-badge--connected {
+    background-color: rgba(74, 222, 128, 0.1);
+    color: var(--success);
+    border: 1px solid rgba(74, 222, 128, 0.2);
 }
 
 /* Device list container */

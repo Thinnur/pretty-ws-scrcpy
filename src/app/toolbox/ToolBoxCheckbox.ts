@@ -26,15 +26,24 @@ export class ToolBoxCheckbox extends ToolBoxElement<HTMLInputElement> {
         } else {
             iconOff = icons;
         }
+        const iconSpan = document.createElement('span');
+        iconSpan.classList.add('btn-icon');
+
         this.imageOff = SvgImage.create(iconOff);
         this.imageOff.classList.add('image', 'image-off');
-        label.appendChild(this.imageOff);
+        iconSpan.appendChild(this.imageOff);
         if (iconOn) {
             this.imageOn = SvgImage.create(iconOn);
             this.imageOn.classList.add('image', 'image-on');
-            label.appendChild(this.imageOn);
+            iconSpan.appendChild(this.imageOn);
             input.classList.add('two-images');
         }
+        label.appendChild(iconSpan);
+
+        const labelSpan = document.createElement('span');
+        labelSpan.classList.add('btn-label');
+        labelSpan.textContent = title;
+        label.appendChild(labelSpan);
         const id = opt_id || title.toLowerCase().replace(' ', '_');
         label.htmlFor = input.id = `input_${id}`;
         this.input = input;

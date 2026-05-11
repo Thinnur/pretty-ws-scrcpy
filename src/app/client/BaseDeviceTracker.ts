@@ -124,8 +124,20 @@ export abstract class BaseDeviceTracker<DD extends BaseDeviceDescriptor, TE exte
             nameEl = document.createElement('div');
             nameEl.id = nameBlockId;
             nameEl.className = 'tracker-name';
+            const nameText = document.createElement('span');
+            nameText.className = 'tracker-name-text';
+            nameEl.appendChild(nameText);
+            const badge = document.createElement('span');
+            badge.className = 'tracker-badge tracker-badge--connected';
+            badge.textContent = 'live';
+            nameEl.appendChild(badge);
         }
-        nameEl.innerText = name;
+        const nameText = nameEl.querySelector<HTMLElement>('.tracker-name-text');
+        if (nameText) {
+            nameText.textContent = name;
+        } else {
+            (nameEl as HTMLElement).innerText = name;
+        }
         parent.insertBefore(nameEl, parent.firstChild);
     }
 
@@ -202,6 +214,15 @@ export abstract class BaseDeviceTracker<DD extends BaseDeviceDescriptor, TE exte
             devices = document.createElement('div');
             devices.id = id;
             devices.className = 'table-wrapper';
+
+            const pageHeader = document.createElement('div');
+            pageHeader.className = 'devices-header';
+            const heading = document.createElement('h1');
+            heading.className = 'devices-title';
+            heading.textContent = 'Devices';
+            pageHeader.appendChild(heading);
+            devices.appendChild(pageHeader);
+
             document.body.appendChild(devices);
         }
         return devices;

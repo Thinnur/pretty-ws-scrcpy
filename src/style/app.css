@@ -59,6 +59,12 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* dashboard.css takes over body layout — suppress legacy overrides */
+body.list {
+    height: 100% !important;
+    overflow: hidden !important;
+}
+
 body.shell {
     background-color: var(--shell-bg-color);
 }
@@ -93,8 +99,11 @@ body.stream {
 
 .device-view {
     z-index: 1;
-    float: right;
-    display: inline-block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
 }
 
 .video-layer {
@@ -108,64 +117,127 @@ body.stream {
 }
 
 .video {
-    float: right;
     max-height: 100%;
     max-width: 100%;
     background-color: #000000;
 }
 
 .control-buttons-list {
-    float: right;
-    width: 3.715rem;
-    background-color: var(--control-buttons-bg-color);
+    width: 56px;
+    height: 100%;
+    background-color: var(--controls-bg-color);
     border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0;
+    overflow: hidden;
+    position: absolute;
+    right: 0;
+    top: 0;
+}
+
+.toolbox-header {
+    width: 100%;
+    padding: 10px 0 8px;
+    display: flex;
+    justify-content: center;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+    flex-shrink: 0;
+}
+
+.toolbox-title {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-disabled);
+    font-family: var(--font-mono);
 }
 
 .control-button {
-    margin: .357rem .786rem;
-    padding: 0;
-    width: 2.143rem;
-    height: 2.143rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    margin: 1px 0;
+    padding: 6px 4px;
+    width: 48px;
+    height: auto;
+    min-height: 44px;
     border: none;
-    opacity: 0.6;
-    background-color: var(--control-buttons-bg-color);
-    cursor: pointer;
-    transition: opacity var(--transition);
     border-radius: var(--radius-sm);
+    opacity: 0.45;
+    background-color: transparent;
+    cursor: pointer;
+    transition: opacity var(--transition), background-color var(--transition);
 }
 
 .control-button:hover {
     opacity: 1;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.btn-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.btn-label {
+    font-size: 8px;
+    font-weight: 500;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    text-transform: lowercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 48px;
+    line-height: 1;
 }
 
 .control-wrapper > input[type=checkbox] {
     display: none;
 }
 
-.control-wrapper > label {
-    display: inline-block;
-}
-
-.control-button > svg {
+.control-button .btn-icon svg {
     fill: var(--svg-button-fill);
 }
 
-.control-wrapper > input[type=checkbox].two-images:checked + label > svg.image-on {
+.control-wrapper > input[type=checkbox].two-images:checked + label .image-on {
     display: block;
 }
 
-.control-wrapper > input[type=checkbox].two-images:not(:checked) + label > svg.image-on {
+.control-wrapper > input[type=checkbox].two-images:not(:checked) + label .image-on {
     display: none;
 }
 
-.control-wrapper > input[type=checkbox].two-images:checked + label > svg.image-off {
+.control-wrapper > input[type=checkbox].two-images:checked + label .image-off {
     display: none;
 }
 
-.control-wrapper > input[type=checkbox].two-images:not(:checked) + label > svg.image-off {
+.control-wrapper > input[type=checkbox].two-images:not(:checked) + label .image-off {
     display: block;
 }
 
-.control-wrapper > input[type=checkbox]:checked + label > svg {
+.control-wrapper > input[type=checkbox]:checked + label .btn-icon svg {
     fill: var(--svg-checkbox-bg-color);
+}
+
+/* Mirror Studio: preserve grid layout when StreamClientScrcpy sets body.className='stream' */
+body.stream {
+    display: grid !important;
+    grid-template-rows: var(--topbar-height, 48px) 1fr !important;
+    grid-template-columns: 1fr !important;
 }

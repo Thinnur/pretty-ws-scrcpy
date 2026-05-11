@@ -8,7 +8,17 @@ export class ToolBoxButton extends ToolBoxElement<HTMLButtonElement> {
         const btn = document.createElement('button');
         btn.classList.add('control-button');
         btn.title = title;
-        btn.appendChild(SvgImage.create(icon));
+
+        const iconSpan = document.createElement('span');
+        iconSpan.classList.add('btn-icon');
+        iconSpan.appendChild(SvgImage.create(icon));
+        btn.appendChild(iconSpan);
+
+        const labelSpan = document.createElement('span');
+        labelSpan.classList.add('btn-label');
+        labelSpan.textContent = title;
+        btn.appendChild(labelSpan);
+
         this.btn = btn;
     }
 

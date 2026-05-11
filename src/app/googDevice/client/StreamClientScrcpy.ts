@@ -325,7 +325,7 @@ export class StreamClientScrcpy
         player.setParent(video);
         player.pause();
 
-        document.body.appendChild(deviceView);
+        (document.getElementById('vpm-stream-container') ?? document.body).appendChild(deviceView);
         if (fitToScreen) {
             const newBounds = this.getMaxSize();
             if (newBounds) {
@@ -381,6 +381,12 @@ export class StreamClientScrcpy
     }
 
     public getMaxSize(): Size | undefined {
+        // In the SPA layout, stream renders inside #vpm-stream-container.
+        // Use its dimensions so the server encodes at the right resolution.
+        const container = document.getElementById('vpm-stream-container');
+        if (container && container.clientWidth > 0 && container.clientHeight > 0) {
+            return new Size(container.clientWidth & ~15, container.clientHeight & ~15);
+        }
         if (!this.controlButtons) {
             return;
         }
