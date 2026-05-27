@@ -402,14 +402,13 @@ function buildTabPanel(name: typeof TABS[number]): HTMLElement {
                 });
                 document.getElementById('ms-send-btn')?.addEventListener('click', () => {
                     const ta = document.getElementById('ms-text-input') as HTMLTextAreaElement | null;
-                    const text = ta?.value.trim() ?? '';
-                    if (!text) return;
-                    if (!activeUdid) {
-                        alert('Select a device first');
-                        return;
-                    }
-                    // No text-inject endpoint — inform user
-                    alert('Text injection requires ADB keyboard input method on the device.\nUse: adb shell input text "' + text + '"');
+                    const text = ta?.value ?? '';
+                    if (!text || !activeUdid) return;
+                    fetch(`/api/devices/${encodeURIComponent(activeUdid)}/input-text`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text }),
+                    }).then(() => { if (ta) ta.value = ''; }).catch(() => {/* ignore */});
                 });
             }, 0);
             break;
@@ -549,8 +548,10 @@ function selectDevice(device: DeviceInfo): void {
     wsBase.searchParams.set('remote', `tcp:${SERVER_PORT}`);
     wsBase.searchParams.set('udid', device.udid);
 
+    const saved = loadSettingsFromStorage();
     const players = StreamClientScrcpy.getPlayers();
-    const playerName = currentPlayerName || players[0]?.playerCodeName || 'mse';
+    const playerName = currentPlayerName || saved.player || players[0]?.playerCodeName || 'mse';
+    currentPlayerName = playerName;
 
     const params = new URLSearchParams({
         action: StreamClientScrcpy.ACTION,
@@ -563,12 +564,21 @@ function selectDevice(device: DeviceInfo): void {
         pathname,
     });
 
+    const videoSettings = new VideoSettings({
+        bitrate: saved.bitrate * 1000,
+        maxFps: saved.maxFps,
+        bounds: new Size(saved.maxWidth, saved.maxHeight),
+        sendFrameMeta: false,
+        iFrameInterval: 5,
+        lockedVideoOrientation: -1,
+    });
+
     console.log('[Mirror Studio] ws proxy URL:', wsBase.toString());
     console.log('[Mirror Studio] StreamClientScrcpy.start params:');
     params.forEach((v, k) => console.log(`  ${k} = ${v}`));
 
     try {
-        currentStreamClient = StreamClientScrcpy.start(params);
+        currentStreamClient = StreamClientScrcpy.start(params, undefined, undefined, true, videoSettings);
         console.log('[Mirror Studio] StreamClientScrcpy.start() returned:', currentStreamClient);
     } catch (e) {
         console.error('[Mirror Studio] StreamClientScrcpy.start() threw:', e);
@@ -673,7 +683,7 @@ function buildSettingsModal(): void {
 }
 
 const SETTINGS_KEY = 'mirror-studio-settings';
-const SETTINGS_DEFAULTS = { player: 'WebCodecs', bitrate: 8000, maxFps: 30, maxWidth: 1080, maxHeight: 1920 };
+const SETTINGS_DEFAULTS = { player: 'webcodecs', bitrate: 8000, maxFps: 60, maxWidth: 1080, maxHeight: 1920 };
 
 function loadSettingsFromStorage(): typeof SETTINGS_DEFAULTS {
     try {
@@ -692,20 +702,21 @@ function openSettings(): void {
     const overlay = document.getElementById('vpm-settings-overlay');
     if (!overlay) return;
 
+    const saved = loadSettingsFromStorage();
     const sel = document.getElementById('s-player') as HTMLSelectElement | null;
     if (sel) {
         sel.innerHTML = '';
+        const activePlayer = currentPlayerName || saved.player;
         StreamClientScrcpy.getPlayers().forEach((p) => {
             const opt = document.createElement('option');
             opt.value = p.playerCodeName;
             opt.textContent = p.playerFullName;
-            opt.selected = p.playerCodeName === currentPlayerName;
+            opt.selected = p.playerCodeName === activePlayer;
             sel.appendChild(opt);
         });
     }
 
     // Load from localStorage first, then override with live stream values if active
-    const saved = loadSettingsFromStorage();
     const bEl = document.getElementById('s-bitrate') as HTMLInputElement | null;
     const fEl = document.getElementById('s-fps') as HTMLInputElement | null;
     const wEl = document.getElementById('s-width') as HTMLInputElement | null;
@@ -745,30 +756,15 @@ function applySettings(): void {
 
     saveSettingsToStorage({ player: newPlayerCode || SETTINGS_DEFAULTS.player, bitrate: bitrateKbps, maxFps, maxWidth: width, maxHeight: height });
 
-    if (currentStreamClient) {
-        const vs = new VideoSettings({
-            bitrate: bitrateKbps * 1000,
-            maxFps,
-            bounds: new Size(width, height),
-            sendFrameMeta: false,
-            iFrameInterval: 5,
-            lockedVideoOrientation: -1,
-        });
-        currentStreamClient.sendNewVideoSetting(vs);
-    }
-
-    const playerChanged = newPlayerCode && newPlayerCode !== currentPlayerName;
-    if (playerChanged && activeUdid) {
-        currentPlayerName = newPlayerCode;
-        const device = currentDevices.find((d) => d.udid === activeUdid);
-        if (device) {
-            closeSettings();
-            selectDevice(device);
-            return;
-        }
-    }
+    if (newPlayerCode) currentPlayerName = newPlayerCode;
 
     closeSettings();
+
+    // Restart stream with new settings if a device is active
+    if (activeUdid) {
+        const device = currentDevices.find((d) => d.udid === activeUdid);
+        if (device) selectDevice(device);
+    }
 }
 
 /* ── ADB keyevent ───────────────────────────────────────── */

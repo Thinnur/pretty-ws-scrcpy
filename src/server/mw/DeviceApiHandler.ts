@@ -118,6 +118,21 @@ export function registerDeviceApi(app: Express): void {
         }
     });
 
+    app.post('/api/devices/:serial/input-text', async (req, res) => {
+        const { serial } = req.params;
+        const { text } = req.body as { text: string };
+        if (typeof text !== 'string' || !text) {
+            res.status(400).json({ error: 'text must be a non-empty string' });
+            return;
+        }
+        try {
+            await adbShell(serial, `input text "${text.replace(/"/g, '\\"')}"`);
+            res.json({ ok: true });
+        } catch (e: any) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     app.get('/api/devices/:serial/notifications', async (req, res) => {
         const { serial } = req.params;
         try {
