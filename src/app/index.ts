@@ -5,6 +5,12 @@ import { ACTION } from '../common/Action';
 import { SERVER_PORT } from '../common/Constants';
 import VideoSettings from './VideoSettings';
 import Size from './Size';
+import Util from './Util';
+import { KeyCodeControlMessage } from './controlMessage/KeyCodeControlMessage';
+import { TextControlMessage } from './controlMessage/TextControlMessage';
+import { CommandControlMessage } from './controlMessage/CommandControlMessage';
+import { ControlMessage } from './controlMessage/ControlMessage';
+import DeviceMessage from './googDevice/DeviceMessage';
 
 /* ── Types ─────────────────────────────────────────────── */
 interface DeviceInfo {
@@ -21,6 +27,7 @@ interface DeviceDetailInfo {
     ip: string;
     battery: number;
     cpu: number;
+    gpu?: number;
     ram: { used: number; total: number };
 }
 
@@ -28,6 +35,9 @@ interface DeviceDetailInfo {
 let activeUdid = '';
 let currentDevices: DeviceInfo[] = [];
 let infoInterval = 0;
+let statsInterval = 0;
+let logsInterval = 0;
+let streamStartTime = 0;
 let currentStreamClient: StreamClientScrcpy | null = null;
 let currentPlayerName = '';
 let rotation = 0;
@@ -53,17 +63,89 @@ function setText(id: string, text: string): void {
     if (e) e.textContent = text;
 }
 
+/* ── Mobile Navigation controllers ──────────────────────── */
+function switchToMobileView(view: string, pushHistory = true): void {
+    const shell = document.querySelector('.ms-shell');
+    if (!shell) return;
+    shell.classList.remove('mobile-view-devices', 'mobile-view-stream', 'mobile-view-sidebar');
+    if (view === 'devices') {
+        shell.classList.add('mobile-view-devices');
+    } else if (view === 'stream') {
+        shell.classList.add('mobile-view-stream');
+    } else if (view === 'controls') {
+        shell.classList.add('mobile-view-sidebar');
+    }
+
+    // Update active nav items
+    const navItems = document.querySelectorAll('.ms-bottom-nav-item');
+    navItems.forEach((btn) => {
+        const item = btn as HTMLElement;
+        item.classList.toggle('active', item.dataset.view === view);
+    });
+
+    if (pushHistory) {
+        const state = window.history.state as { view?: string } | null;
+        if (!state || state.view !== view) {
+            window.history.pushState({ view }, '');
+        }
+    }
+}
+
+function buildBottomNav(): HTMLElement {
+    const nav = el('div', 'ms-bottom-nav');
+    nav.innerHTML = `
+        <button class="ms-bottom-nav-item active" data-view="devices">
+            <span class="icon">📱</span>
+            <span class="label">Devices</span>
+        </button>
+        <button class="ms-bottom-nav-item" data-view="stream">
+            <span class="icon">📺</span>
+            <span class="label">Stream</span>
+        </button>
+        <button class="ms-bottom-nav-item" data-view="controls">
+            <span class="icon">⚙️</span>
+            <span class="label">Controls</span>
+        </button>
+    `;
+
+    nav.addEventListener('click', (e) => {
+        const item = (e.target as HTMLElement).closest('.ms-bottom-nav-item') as HTMLElement | null;
+        if (!item) return;
+        const view = item.dataset.view;
+        if (view) switchToMobileView(view, true);
+    });
+
+    return nav;
+}
+
 /* ── Layout builder ─────────────────────────────────────── */
 function buildLayout(): void {
     const topbar = buildTopbar();
     const shell = el('div', 'ms-shell');
+    shell.classList.add('mobile-view-devices');
+
     const rail = buildRail();
     const stage = buildStage();
     const sidebar = buildSidebar();
     shell.append(rail, stage, sidebar);
-    document.body.append(topbar, shell);
+
+    const bottomNav = buildBottomNav();
+
+    document.body.append(topbar, shell, bottomNav);
     wireTopBarButtons();
     buildSettingsModal();
+
+    // Initial History API setup
+    window.history.replaceState({ view: 'devices' }, '');
+
+    window.addEventListener('popstate', (e) => {
+        const state = e.state as { view?: string } | null;
+        if (state && typeof state.view === 'string') {
+            switchToMobileView(state.view, false);
+        } else {
+            switchToMobileView('devices', false);
+        }
+    });
 }
 
 /* ── Topbar ─────────────────────────────────────────────── */
@@ -167,6 +249,7 @@ function buildStage(): HTMLElement {
         { label: 'Fit', key: 'fit', active: false },
         { label: 'Record', key: 'record', active: false },
         { label: 'Screenshot', key: 'screenshot', active: false },
+        { label: 'Capture Keys', key: 'keys', active: false },
     ];
     pillDefs.forEach(({ label, key, active }) => {
         const pill = el('button', 'ms-pill' + (active ? ' active' : ''));
@@ -223,6 +306,12 @@ function wirePills(container: HTMLElement): void {
                     el.classList.toggle('active', el === pill);
                 }
             });
+        } else if (action === 'keys') {
+            const isCapture = !pill.classList.contains('active');
+            pill.classList.toggle('active', isCapture);
+            if (currentStreamClient) {
+                currentStreamClient.setHandleKeyboardEvents(isCapture);
+            }
         }
     });
 }
@@ -375,6 +464,25 @@ function buildTabPanel(name: typeof TABS[number]): HTMLElement {
                 <textarea class="ms-text-area" id="ms-text-input"
                     placeholder="Type to inject into focused field…"></textarea>
                 <button class="ms-send-btn" id="ms-send-btn">Send</button>
+
+                <div class="ms-section-title" style="margin-top:14px">Clipboard</div>
+                <textarea class="ms-text-area" id="ms-clip-input"
+                    placeholder="Clipboard text…"></textarea>
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <button class="ms-send-btn" id="ms-clip-get" style="flex: 1; margin: 0;">Get Clipboard</button>
+                    <button class="ms-send-btn" id="ms-clip-set" style="flex: 1; margin: 0;">Set Clipboard</button>
+                </div>
+
+                <div class="ms-section-title" style="margin-top:14px">Device Actions</div>
+                <div class="ms-hw-keys" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+                    <button class="ms-send-btn" id="cmd-expand-notif" style="margin: 0; font-size: 11px; padding: 6px;">Notif Panel</button>
+                    <button class="ms-send-btn" id="cmd-expand-settings" style="margin: 0; font-size: 11px; padding: 6px;">Settings Panel</button>
+                    <button class="ms-send-btn" id="cmd-collapse-panels" style="margin: 0; font-size: 11px; padding: 6px;">Collapse Panels</button>
+                    <button class="ms-send-btn" id="cmd-rotate-device" style="margin: 0; font-size: 11px; padding: 6px;">Rotate Device</button>
+                    <button class="ms-send-btn" id="cmd-screen-off" style="margin: 0; font-size: 11px; padding: 6px;">Screen Off</button>
+                    <button class="ms-send-btn" id="cmd-screen-on" style="margin: 0; font-size: 11px; padding: 6px;">Screen On</button>
+                </div>
+
                 <div class="ms-section-title" style="margin-top:14px">Hardware keys</div>
                 <div class="ms-hw-keys">
                     ${[
@@ -403,12 +511,63 @@ function buildTabPanel(name: typeof TABS[number]): HTMLElement {
                 document.getElementById('ms-send-btn')?.addEventListener('click', () => {
                     const ta = document.getElementById('ms-text-input') as HTMLTextAreaElement | null;
                     const text = ta?.value ?? '';
-                    if (!text || !activeUdid) return;
-                    fetch(`/api/devices/${encodeURIComponent(activeUdid)}/input-text`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text }),
-                    }).then(() => { if (ta) ta.value = ''; }).catch(() => {/* ignore */});
+                    if (!text) return;
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(new TextControlMessage(text));
+                        if (ta) ta.value = '';
+                    } else if (activeUdid) {
+                        fetch(`/api/devices/${encodeURIComponent(activeUdid)}/input-text`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ text }),
+                        }).then(() => { if (ta) ta.value = ''; }).catch(() => {/* ignore */});
+                    }
+                });
+
+                // Wire Clipboard
+                document.getElementById('ms-clip-get')?.addEventListener('click', () => {
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(new CommandControlMessage(ControlMessage.TYPE_GET_CLIPBOARD));
+                    }
+                });
+                document.getElementById('ms-clip-set')?.addEventListener('click', () => {
+                    const ta = document.getElementById('ms-clip-input') as HTMLTextAreaElement | null;
+                    const text = ta?.value ?? '';
+                    if (currentStreamClient && text) {
+                        currentStreamClient.sendMessage(CommandControlMessage.createSetClipboardCommand(text));
+                    }
+                });
+
+                // Wire Device Actions
+                document.getElementById('cmd-expand-notif')?.addEventListener('click', () => {
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(new CommandControlMessage(ControlMessage.TYPE_EXPAND_NOTIFICATION_PANEL));
+                    }
+                });
+                document.getElementById('cmd-expand-settings')?.addEventListener('click', () => {
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(new CommandControlMessage(ControlMessage.TYPE_EXPAND_SETTINGS_PANEL));
+                    }
+                });
+                document.getElementById('cmd-collapse-panels')?.addEventListener('click', () => {
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(new CommandControlMessage(ControlMessage.TYPE_COLLAPSE_PANELS));
+                    }
+                });
+                document.getElementById('cmd-rotate-device')?.addEventListener('click', () => {
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(new CommandControlMessage(ControlMessage.TYPE_ROTATE_DEVICE));
+                    }
+                });
+                document.getElementById('cmd-screen-off')?.addEventListener('click', () => {
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(CommandControlMessage.createSetScreenPowerModeCommand(false));
+                    }
+                });
+                document.getElementById('cmd-screen-on')?.addEventListener('click', () => {
+                    if (currentStreamClient) {
+                        currentStreamClient.sendMessage(CommandControlMessage.createSetScreenPowerModeCommand(true));
+                    }
                 });
             }, 0);
             break;
@@ -514,6 +673,9 @@ function selectDevice(device: DeviceInfo): void {
     activeUdid = device.udid;
     renderDeviceList(currentDevices);
 
+    // Auto-switch to stream view on mobile
+    switchToMobileView('stream', true);
+
     // Update meta bar
     setText('ms-meta-device', device.model || device.udid);
     setText('ms-meta-res', '—');
@@ -521,7 +683,7 @@ function selectDevice(device: DeviceInfo): void {
 
     // Stop previous stream client
     if (currentStreamClient) {
-        try { (currentStreamClient as any).stop?.(); } catch { /* ignore */ }
+        try { currentStreamClient.stop(); } catch { /* ignore */ }
         currentStreamClient = null;
     }
 
@@ -580,10 +742,47 @@ function selectDevice(device: DeviceInfo): void {
     try {
         currentStreamClient = StreamClientScrcpy.start(params, undefined, undefined, true, videoSettings);
         console.log('[Mirror Studio] StreamClientScrcpy.start() returned:', currentStreamClient);
+        
+        if (currentStreamClient) {
+            currentStreamClient.on('device-message', (msg) => {
+                if (msg.type === DeviceMessage.TYPE_CLIPBOARD) {
+                    const text = msg.getText();
+                    const ta = document.getElementById('ms-clip-input') as HTMLTextAreaElement | null;
+                    if (ta) ta.value = text;
+                    
+                    // Auto-copy to PC clipboard
+                    navigator.clipboard.writeText(text)
+                        .then(() => {
+                            console.log('[Clipboard] Sync text to PC clipboard succeeded');
+                        })
+                        .catch((err) => {
+                            console.error('[Clipboard] Sync text to PC clipboard failed:', err);
+                        });
+                }
+            });
+            
+            // Reset Capture Keys active state on select device
+            const keyPill = document.querySelector('[data-pill="keys"]');
+            if (keyPill) {
+                keyPill.classList.remove('active');
+            }
+            currentStreamClient.setHandleKeyboardEvents(false);
+        }
     } catch (e) {
         console.error('[Mirror Studio] StreamClientScrcpy.start() threw:', e);
     }
+
+    // Set stream start time for uptime stats
+    streamStartTime = Date.now();
+
     startInfoPolling(device.udid);
+    startStatsPolling();
+    startLogsPolling(device.udid);
+    loadApps(device.udid);
+
+    if (currentStreamClient) {
+        initFilePushListener(currentStreamClient);
+    }
 }
 
 /* ── Info polling ───────────────────────────────────────── */
@@ -616,13 +815,12 @@ function updateInfoPanel(info: DeviceDetailInfo): void {
 
     setPerf('battery', info.battery ?? 0, `${Math.round(info.battery ?? 0)}`, '%');
     setPerf('cpu', info.cpu ?? 0, `${Math.round(info.cpu ?? 0)}`, '%');
+    setPerf('gpu', info.gpu ?? 0, `${Math.round(info.gpu ?? 0)}`, '%');
 
     const ramPct = info.ram?.total > 0
         ? Math.round((info.ram.used / info.ram.total) * 100)
         : 0;
-    setPerf('ram', ramPct, `${info.ram?.used ?? 0}`, 'MB');
-
-    // GPU/FPS/Net not returned by API — leave as static placeholders
+    setPerf('ram', ramPct, `${info.ram?.used ?? 0} / ${info.ram?.total ?? 0}`, 'MB');
 }
 
 function setPerf(id: string, pct: number, value: string, unit: string): void {
@@ -630,6 +828,259 @@ function setPerf(id: string, pct: number, value: string, unit: string): void {
     if (valEl) valEl.innerHTML = `${escHtml(value)}<span class="u"> ${unit}</span>`;
     const fill = document.getElementById(`pf-${id}`);
     if (fill) fill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+}
+
+/* ── Stream Stats, Logs, Apps & Files wiring ──────────────── */
+function startStatsPolling(): void {
+    clearInterval(statsInterval);
+    updateStatsUI();
+    statsInterval = window.setInterval(updateStatsUI, 1000);
+}
+
+async function updateStatsUI(): Promise<void> {
+    if (!activeUdid) return;
+
+    if (streamStartTime > 0) {
+        const uptimeSecs = Math.round((Date.now() - streamStartTime) / 1000);
+        const hh = String(Math.floor(uptimeSecs / 3600)).padStart(2, '0');
+        const mm = String(Math.floor((uptimeSecs % 3600) / 60)).padStart(2, '0');
+        const ss = String(uptimeSecs % 60).padStart(2, '0');
+        setText('ss-uptime', `${hh}:${mm}:${ss}`);
+    }
+
+    const latencyStart = performance.now();
+    try {
+        await fetch('/api/devices', { method: 'HEAD' });
+        const latency = Math.round(performance.now() - latencyStart);
+        setText('ss-latency', `${latency} ms`);
+        setText('ms-meta-latency', `${latency} ms`);
+    } catch {
+        // ignore
+    }
+
+    if (currentStreamClient) {
+        const player = currentStreamClient.getPlayer();
+        if (player) {
+            const screenInfo = player.getScreenInfo();
+            if (screenInfo) {
+                const { width, height } = screenInfo.videoSize;
+                setText('ms-meta-res', `${width}x${height}`);
+            }
+
+            const stats = player['perSecondQualityStats'];
+            if (stats) {
+                const fps = stats.avgDecoded || 0;
+                setText('ms-meta-fps', `${Math.round(fps)} fps`);
+                setPerf('fps', (fps / 60) * 100, `${Math.round(fps)}`, 'fps');
+
+                const avgSize = stats.avgSize || 0;
+                setText('ss-throughput', avgSize > 0 ? `${Util.prettyBytes(avgSize)}/s` : '0 B/s');
+
+                const avgBitrate = avgSize * 8;
+                const mbps = avgBitrate / 1000000;
+                setText('ss-bitrate', mbps > 0 ? `${mbps.toFixed(2)} Mbps` : '0 Mbps');
+                
+                const vs = player.getVideoSettings();
+                const maxBitrate = vs?.bitrate || 8000000;
+                const netPct = Math.min(100, (avgBitrate / maxBitrate) * 100);
+                setPerf('net', netPct, mbps.toFixed(2), 'Mbps');
+
+                setText('ss-codec', 'H.264');
+            }
+        }
+    }
+}
+
+function startLogsPolling(udid: string): void {
+    clearInterval(logsInterval);
+    fetchAndUpdateLogs(udid);
+    logsInterval = window.setInterval(() => fetchAndUpdateLogs(udid), 3000);
+}
+
+async function fetchAndUpdateLogs(udid: string): Promise<void> {
+    const list = document.querySelector('.ms-log-list');
+    if (!list) return;
+    try {
+        const resp = await fetch(`/api/devices/${encodeURIComponent(udid)}/logcat`);
+        if (!resp.ok) return;
+        const { logs } = (await resp.json()) as { logs: { level: string; tag: string; msg: string; ts: string }[] };
+        
+        const activeFilterBtn = document.querySelector('.ms-log-filter.active');
+        const filter = activeFilterBtn?.textContent?.toUpperCase() || 'ALL';
+
+        list.innerHTML = '';
+        logs.forEach((l) => {
+            if (filter !== 'ALL') {
+                const mapping: Record<string, string> = {
+                    'VERBOSE': 'V',
+                    'INFO': 'I',
+                    'WARN': 'W',
+                    'ERROR': 'E'
+                };
+                const expectedLevel = mapping[filter];
+                if (expectedLevel && l.level !== expectedLevel) {
+                    return;
+                }
+            }
+
+            const line = el('div', 'ms-log-line');
+            line.innerHTML = `
+                <span class="ts">${l.ts}</span>
+                <span class="lv ${l.level}">${l.level}</span>
+                <span class="tag">${escHtml(l.tag)}</span>
+                <span class="msg">${escHtml(l.msg)}</span>
+            `;
+            list.appendChild(line);
+        });
+
+        const note = document.querySelector('.ms-sidebar [data-panel="logs"] .ms-log-note');
+        if (note) note.textContent = `Connected via ADB · Streaming logcat`;
+    } catch {
+        // ignore
+    }
+}
+
+async function loadApps(udid: string): Promise<void> {
+    const grid = document.querySelector('.ms-app-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div class="ms-log-note">Loading apps…</div>';
+    try {
+        const resp = await fetch(`/api/devices/${encodeURIComponent(udid)}/apps`);
+        if (!resp.ok) throw new Error();
+        const { packages } = (await resp.json()) as { packages: string[] };
+        grid.innerHTML = '';
+        if (packages.length === 0) {
+            grid.innerHTML = '<div class="ms-log-note">No third-party apps found</div>';
+            return;
+        }
+        packages.forEach((pkg) => {
+            const tile = el('div', 'ms-app-tile');
+            let icon = '📱';
+            let name = pkg.split('.').pop() || pkg;
+            name = name.charAt(0).toUpperCase() + name.slice(1);
+            if (pkg.includes('chrome')) { icon = '🌐'; name = 'Chrome'; }
+            else if (pkg.includes('youtube')) { icon = '📺'; name = 'YouTube'; }
+            else if (pkg.includes('camera')) { icon = '📷'; name = 'Camera'; }
+            else if (pkg.includes('map')) { icon = '🗺'; name = 'Maps'; }
+            else if (pkg.includes('music')) { icon = '🎵'; name = 'Music'; }
+            else if (pkg.includes('file')) { icon = '📁'; name = 'Files'; }
+            else if (pkg.includes('message') || pkg.includes('sms')) { icon = '💬'; name = 'Messages'; }
+            else if (pkg.includes('setting')) { icon = '⚙'; name = 'Settings'; }
+            else if (pkg.includes('gallery') || pkg.includes('photo')) { icon = '📸'; name = 'Photos'; }
+            else if (pkg.includes('facebook')) { icon = '👥'; name = 'Facebook'; }
+            else if (pkg.includes('twitter') || pkg.includes('x.')) { icon = '🐦'; name = 'Twitter'; }
+            else if (pkg.includes('instagram')) { icon = '📸'; name = 'Instagram'; }
+            
+            tile.innerHTML = `
+                <div class="ms-app-icon">${icon}</div>
+                <span class="ms-app-name" title="${pkg}">${name}</span>
+            `;
+            tile.addEventListener('click', () => launchApp(udid, pkg));
+            grid.appendChild(tile);
+        });
+        const note = document.querySelector('.ms-sidebar [data-panel="apps"] .ms-log-note');
+        if (note) note.textContent = `Connected via ADB · ${packages.length} apps listed`;
+    } catch {
+        grid.innerHTML = '<div class="ms-log-note">Failed to load apps</div>';
+    }
+}
+
+async function launchApp(udid: string, pkg: string): Promise<void> {
+    try {
+        const resp = await fetch(`/api/devices/${encodeURIComponent(udid)}/apps/launch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ package: pkg }),
+        });
+        if (resp.ok) {
+            console.log(`Successfully launched app ${pkg}`);
+        } else {
+            console.error(`Failed to launch app ${pkg}`);
+        }
+    } catch (e) {
+        console.error('Launch app error:', e);
+    }
+}
+
+function initFilePushListener(client: StreamClientScrcpy): void {
+    const handler = client.getFilePushHandler();
+    if (!handler) {
+        setTimeout(() => initFilePushListener(client), 100);
+        return;
+    }
+
+    const fileList = document.querySelector('.ms-file-list');
+    if (fileList) {
+        fileList.innerHTML = '<div class="ms-log-note">Drag and drop files onto the device screen to upload</div>';
+    }
+
+    handler.addEventListener({
+        onDragEnter: () => {
+            const wrap = document.getElementById('vpm-stream-container');
+            wrap?.classList.add('drag-hover');
+            return true;
+        },
+        onDragLeave: () => {
+            const wrap = document.getElementById('vpm-stream-container');
+            wrap?.classList.remove('drag-hover');
+            return true;
+        },
+        onDrop: () => {
+            const wrap = document.getElementById('vpm-stream-container');
+            wrap?.classList.remove('drag-hover');
+            return true;
+        },
+        onFilePushUpdate: (data) => {
+            updateFileQueue(data);
+        },
+        onError: (err) => {
+            console.error('File push error:', err);
+        }
+    });
+}
+
+function updateFileQueue(data: { pushId: number; fileName: string; message: string; progress: number; error: boolean; finished: boolean }): void {
+    const fileList = document.querySelector('.ms-file-list');
+    if (!fileList) return;
+
+    const note = fileList.querySelector('.ms-log-note');
+    if (note) {
+        fileList.innerHTML = '';
+    }
+
+    let item = document.getElementById(`push-item-${data.pushId}`);
+    if (!item && data.pushId !== 0) {
+        item = el('div', 'ms-file-item');
+        item.id = `push-item-${data.pushId}`;
+        fileList.appendChild(item);
+    } else if (data.pushId === 0) {
+        item = document.getElementById(`push-item-0`);
+        if (!item) {
+            item = el('div', 'ms-file-item');
+            item.id = `push-item-0`;
+            fileList.appendChild(item);
+        }
+    }
+
+    if (item) {
+        if (data.pushId > 0 && item.id === 'push-item-0') {
+            item.id = `push-item-${data.pushId}`;
+        }
+
+        const pct = Math.max(0, Math.min(100, data.progress));
+        const statusClass = data.error ? 'error' : data.finished ? 'finished' : 'uploading';
+        
+        item.className = `ms-file-item ${statusClass}`;
+        item.innerHTML = `
+            <div class="ms-file-header">
+                <span class="ms-file-name">${escHtml(data.fileName)}</span>
+                <span class="ms-file-size" style="color: ${data.error ? 'var(--text-danger)' : 'var(--text-secondary)'}">${escHtml(data.message)}</span>
+            </div>
+            <div class="ms-file-prog">
+                <div class="fill" style="width:${pct}%; background-color: ${data.error ? 'var(--text-danger)' : 'var(--brand-primary)'}"></div>
+            </div>
+        `;
+    }
 }
 
 /* ── Settings modal ─────────────────────────────────────── */
@@ -731,10 +1182,6 @@ function openSettings(): void {
         if (vs) {
             if (bEl) bEl.value = String(Math.round(vs.bitrate / 1000));
             if (fEl) fEl.value = String(vs.maxFps ?? 30);
-            if (vs.bounds) {
-                if (wEl) wEl.value = String(vs.bounds.width);
-                if (hEl) hEl.value = String(vs.bounds.height);
-            }
         }
     }
 
@@ -769,12 +1216,16 @@ function applySettings(): void {
 
 /* ── ADB keyevent ───────────────────────────────────────── */
 function sendKeyevent(keycode: number): void {
-    if (!activeUdid) return;
-    fetch(`/api/devices/${encodeURIComponent(activeUdid)}/keyevent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keycode }),
-    }).catch(() => {/* ignore */});
+    if (currentStreamClient) {
+        currentStreamClient.sendMessage(new KeyCodeControlMessage(0, keycode, 0, 0));
+        currentStreamClient.sendMessage(new KeyCodeControlMessage(1, keycode, 0, 0));
+    } else if (activeUdid) {
+        fetch(`/api/devices/${encodeURIComponent(activeUdid)}/keyevent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keycode }),
+        }).catch(() => {/* ignore */});
+    }
 }
 
 /* ── Entry point ────────────────────────────────────────── */

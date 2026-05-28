@@ -41,8 +41,12 @@ type StartParams = {
 
 const TAG = '[StreamClientScrcpy]';
 
+export interface StreamClientEvents {
+    'device-message': DeviceMessage;
+}
+
 export class StreamClientScrcpy
-    extends BaseClient<ParamsStreamScrcpy, never>
+    extends BaseClient<ParamsStreamScrcpy, StreamClientEvents>
     implements KeyEventListener, InteractionHandlerListener
 {
     public static ACTION = 'stream';
@@ -60,6 +64,7 @@ export class StreamClientScrcpy
     private filePushHandler?: FilePushHandler;
     private fitToScreen?: boolean;
     private readonly streamReceiver: StreamReceiverScrcpy;
+    private deviceView?: HTMLElement;
 
     public static registerPlayer(playerClass: PlayerClass): void {
         if (playerClass.isSupported()) {
@@ -165,6 +170,7 @@ export class StreamClientScrcpy
         if (this.moreBox) {
             this.moreBox.OnDeviceMessage(message);
         }
+        this.emit('device-message', message);
     };
 
     public onVideo = (data: ArrayBuffer): void => {
@@ -291,30 +297,12 @@ export class StreamClientScrcpy
             videoSettings = player.getVideoSettings();
         }
 
-        const deviceView = document.createElement('div');
+        const deviceView = (this.deviceView = document.createElement('div'));
         deviceView.className = 'device-view';
-        const stop = (ev?: string | Event) => {
-            if (ev && ev instanceof Event && ev.type === 'error') {
-                console.error(TAG, ev);
-            }
-            let parent;
-            parent = deviceView.parentElement;
-            if (parent) {
-                parent.removeChild(deviceView);
-            }
-            parent = moreBox.parentElement;
-            if (parent) {
-                parent.removeChild(moreBox);
-            }
-            this.streamReceiver.stop();
-            if (this.player) {
-                this.player.stop();
-            }
-        };
 
         const googMoreBox = (this.moreBox = new GoogMoreBox(udid, player, this));
         const moreBox = googMoreBox.getHolderElement();
-        googMoreBox.setOnStop(stop);
+        googMoreBox.setOnStop(this.stop);
         const googToolBox = GoogToolBox.createToolBox(udid, player, this, moreBox);
         this.controlButtons = googToolBox.getHolderElement();
         deviceView.appendChild(this.controlButtons);
@@ -349,6 +337,38 @@ export class StreamClientScrcpy
 
     public sendMessage(message: ControlMessage): void {
         this.streamReceiver.sendEvent(message);
+    }
+
+    public stop = (ev?: string | Event): void => {
+        if (ev && ev instanceof Event && ev.type === 'error') {
+            console.error(TAG, ev);
+        }
+        let parent;
+        if (this.deviceView) {
+            parent = this.deviceView.parentElement;
+            if (parent) {
+                parent.removeChild(this.deviceView);
+            }
+        }
+        if (this.moreBox) {
+            const moreBoxElement = this.moreBox.getHolderElement();
+            parent = moreBoxElement.parentElement;
+            if (parent) {
+                parent.removeChild(moreBoxElement);
+            }
+        }
+        this.streamReceiver.stop();
+        if (this.player) {
+            this.player.stop();
+        }
+    };
+
+    public getPlayer(): BasePlayer | undefined {
+        return this.player;
+    }
+
+    public getFilePushHandler(): FilePushHandler | undefined {
+        return this.filePushHandler;
     }
 
     public getDeviceName(): string {
