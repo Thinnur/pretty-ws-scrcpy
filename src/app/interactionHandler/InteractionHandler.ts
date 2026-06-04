@@ -82,6 +82,7 @@ export abstract class InteractionHandler {
     protected readonly tag: HTMLCanvasElement;
     protected over = false;
     protected lastPosition?: MouseEvent;
+    protected readonly touchListeners: Map<string, (e: any) => void> = new Map();
 
     protected constructor(
         public readonly player: BasePlayer,
@@ -99,6 +100,13 @@ export abstract class InteractionHandler {
 
     protected static bindGlobalListeners(interactionHandler: InteractionHandler): void {
         interactionHandler.touchEventsNames.forEach((eventName) => {
+            if (eventName.startsWith('touch')) {
+                const listener = (e: any) => interactionHandler.onInteraction(e);
+                interactionHandler.tag.addEventListener(eventName, listener, InteractionHandler.options as any);
+                interactionHandler.touchListeners.set(eventName, listener);
+                return;
+            }
+
             let set: Set<InteractionHandler> | undefined = InteractionHandler.eventListeners.get(eventName);
             if (!set) {
                 set = new Set();
@@ -120,6 +128,15 @@ export abstract class InteractionHandler {
 
     protected static unbindListeners(touchHandler: InteractionHandler): void {
         touchHandler.touchEventsNames.forEach((eventName) => {
+            if (eventName.startsWith('touch')) {
+                const listener = touchHandler.touchListeners.get(eventName);
+                if (listener) {
+                    touchHandler.tag.removeEventListener(eventName, listener, InteractionHandler.options as any);
+                    touchHandler.touchListeners.delete(eventName);
+                }
+                return;
+            }
+
             const set = InteractionHandler.eventListeners.get(eventName);
             if (!set) {
                 return;
@@ -288,7 +305,7 @@ export abstract class InteractionHandler {
             if (!previous) {
                 if (
                     (originalEvent instanceof MouseEvent && originalEvent.buttons) ||
-                    (window['TouchEvent'] && originalEvent instanceof TouchEvent)
+                    originalEvent.type.startsWith('touch')
                 ) {
                     console.warn(logPrefix, 'Received ACTION_MOVE while there are no DOWN stored');
                     const emulated = InteractionHandler.createEmulatedMessage(MotionEvent.ACTION_DOWN, message);
@@ -464,7 +481,11 @@ export abstract class InteractionHandler {
             for (let i = 0, l = touches.length; i < l; i++) {
                 const touch = touches[i];
                 const pointerId = InteractionHandler.getPointerId(e.type, touch.identifier);
-                if (touch.target !== this.tag) {
+                // iOS Safari sometimes reports touch.target as a parent element
+                // (e.g. the .video div) instead of the canvas itself — accept
+                // any touch whose target is the canvas OR an ancestor of it.
+                const tgt = touch.target as Element | null;
+                if (tgt !== this.tag && !tgt?.contains(this.tag)) {
                     continue;
                 }
                 const previous = storage.get(pointerId);
@@ -558,5 +579,13 @@ export abstract class InteractionHandler {
 
     public release(): void {
         InteractionHandler.unbindListeners(this);
+        InteractionHandler.clearPointerState();
+    }
+
+    protected static clearPointerState(): void {
+        // Static maps persist across stream sessions; stale entries cause
+        // validateMessage to silently drop ACTION_DOWN ("already has one stored").
+        InteractionHandler.idToPointerMap.clear();
+        InteractionHandler.pointerToIdMap.clear();
     }
 }

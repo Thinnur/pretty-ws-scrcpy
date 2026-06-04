@@ -63,7 +63,7 @@ export class FeaturedInteractionHandler extends InteractionHandler {
         let messages: ControlMessage[];
         let storage: Map<number, TouchControlMessage>;
         if (event instanceof MouseEvent) {
-            if (event.target !== this.tag) {
+            if (event.target !== this.tag && !(event.target instanceof HTMLElement && event.target.classList.contains('video-layer'))) {
                 return;
             }
             if (window['WheelEvent'] && event instanceof WheelEvent) {
@@ -75,13 +75,13 @@ export class FeaturedInteractionHandler extends InteractionHandler {
             if (this.over) {
                 this.lastPosition = event;
             }
-        } else if (window['TouchEvent'] && event instanceof TouchEvent) {
+        } else if (event.type.startsWith('touch')) {
             // TODO: Research drag from out of the target inside it
-            if (event.target !== this.tag) {
+            if (event.target !== this.tag && !(event.target instanceof HTMLElement && event.target.classList.contains('video-layer'))) {
                 return;
             }
             storage = this.storedFromTouchEvent;
-            messages = this.formatTouchEvent(event, screenInfo, storage);
+            messages = this.formatTouchEvent(event as TouchEvent, screenInfo, storage);
         } else {
             console.error(TAG, 'Unsupported event', event);
             return;

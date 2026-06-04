@@ -280,6 +280,12 @@ function buildHwRail(): HTMLElement {
         btn.textContent = label;
         btn.title = label;
         btn.addEventListener('click', () => sendKeyevent(keycode));
+        // iOS Safari: touchend fires reliably on buttons inside overflow-x:auto containers
+        // preventDefault stops ghost-click from double-firing after touchend
+        btn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            sendKeyevent(keycode);
+        }, { passive: false });
         rail.appendChild(btn);
     });
     return rail;
